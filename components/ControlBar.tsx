@@ -154,7 +154,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
           className="text-[#f6ab3e] font-bold underline"
         >
           RAJAN
-        </a><span className="text-[11px] text-[#f2b880]">♡</span>
+        </a><span className="text-[11px] text-[#f6ab3e]">♡</span>
       </div>
     </footer>
   );

@@ -158,6 +158,7 @@ export default function App() {
 
   // ---- animation state ----
   const startTimeRef = useRef<number | null>(null);
+  const pausedProgressRef = useRef<number>(0);
   const rafIdRef = useRef<number>(0);
   const currentScannerXRef = useRef(0);
 
@@ -228,38 +229,39 @@ export default function App() {
 
   /* ---------------- pointer & touch drawing input ---------------- */
   useEffect(() => {
-    const canvas = drawCanvasRef.current;
-    if (!canvas) return;
+    const stage = stageRef.current;
+    if (!stage) return;
 
     function posFromCoords(clientX: number, clientY: number) {
-      const rect = canvas!.getBoundingClientRect();
-      return { x: clientX - rect.left, y: clientY - rect.top };
+      const rect = stage!.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(rect.width, clientX - rect.left)),
+        y: Math.max(0, Math.min(rect.height, clientY - rect.top)),
+      };
     }
 
     function startDraw(x: number, y: number) {
       audioEngineRef.current?.unlockAudio();
-      const dctx = dctxRef.current;
-      if (!dctx) return;
       drawingRef.current = true;
-      setHasDrawn(true);
+      lastPosRef.current = { x, y };
 
       const activeTone = waveformRef.current;
-      const colorObj = TONE_COLORS[activeTone] || TONE_COLORS.sine;
-      const color = theme === "dark" ? colorObj.darkHex : colorObj.hex;
-
-      const p = { x, y };
-      lastPosRef.current = p;
-
       const stroke: Stroke = {
-        id: Math.random().toString(),
+        id: Math.random().toString(36).slice(2),
         waveform: activeTone,
-        points: [p],
+        points: [{ x, y }],
       };
       currentStrokeRef.current = stroke;
       strokesRef.current.push(stroke);
+      setHasDrawn(true);
+
+      const dctx = dctxRef.current;
+      if (!dctx) return;
+      const colorObj = TONE_COLORS[activeTone] || TONE_COLORS.sine;
+      const color = theme === "dark" ? colorObj.darkHex : colorObj.hex;
 
       dctx.beginPath();
-      dctx.arc(p.x, p.y, dctx.lineWidth / 2, 0, Math.PI * 2);
+      dctx.arc(x, y, dctx.lineWidth / 2, 0, Math.PI * 2);
       dctx.fillStyle = color;
       dctx.fill();
     }
@@ -302,78 +304,83 @@ export default function App() {
 
     function onTouchMove(e: TouchEvent) {
       if (e.cancelable) e.preventDefault();
-      if (e.touches.length > 0) {
-        const t = e.touches[0];
-        const p = posFromCoords(t.clientX, t.clientY);
-        moveDraw(p.x, p.y);
-      }
+      if (!drawingRef.current || e.touches.length === 0) return;
+      const t = e.touches[0];
+      const p = posFromCoords(t.clientX, t.clientY);
+      moveDraw(p.x, p.y);
     }
 
     function onTouchEnd(e: TouchEvent) {
       if (e.cancelable) e.preventDefault();
-      isTouching = false;
       stopDraw();
+      setTimeout(() => {
+        isTouching = false;
+      }, 50);
     }
 
     function onPointerDown(e: PointerEvent) {
-      if (e.pointerType === "touch" || isTouching) return;
-      const p = posFromCoords(e.clientX, e.clientY);
-      startDraw(p.x, p.y);
-      try {
-        canvas!.setPointerCapture(e.pointerId);
-      } catch {
-        /* fallback */
-      }
+      if (isTouching) return;
+      if (e.pointerType === "touch") return;
+      startDraw(
+        e.clientX - stage!.getBoundingClientRect().left,
+        e.clientY - stage!.getBoundingClientRect().top
+      );
+      stage!.setPointerCapture(e.pointerId);
     }
 
     function onPointerMove(e: PointerEvent) {
-      if (e.pointerType === "touch" || isTouching) return;
-      const p = posFromCoords(e.clientX, e.clientY);
-      moveDraw(p.x, p.y);
+      if (isTouching) return;
+      if (!drawingRef.current) return;
+      const rect = stage!.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+      const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+      moveDraw(x, y);
     }
 
     function onPointerUp(e: PointerEvent) {
-      if (e.pointerType === "touch" || isTouching) return;
+      if (isTouching) return;
       stopDraw();
+      try {
+        stage!.releasePointerCapture(e.pointerId);
+      } catch {
+        /* no-op */
+      }
     }
 
-    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
-    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
-    canvas.addEventListener("touchend", onTouchEnd, { passive: false });
-    canvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
-
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerup", onPointerUp);
-    canvas.addEventListener("pointerleave", onPointerUp);
-    canvas.addEventListener("pointercancel", onPointerUp);
+    stage.addEventListener("touchstart", onTouchStart, { passive: false });
+    stage.addEventListener("touchmove", onTouchMove, { passive: false });
+    stage.addEventListener("touchend", onTouchEnd, { passive: false });
+    stage.addEventListener("pointerdown", onPointerDown);
+    stage.addEventListener("pointermove", onPointerMove);
+    stage.addEventListener("pointerup", onPointerUp);
+    stage.addEventListener("pointercancel", onPointerUp);
 
     return () => {
-      canvas.removeEventListener("touchstart", onTouchStart);
-      canvas.removeEventListener("touchmove", onTouchMove);
-      canvas.removeEventListener("touchend", onTouchEnd);
-      canvas.removeEventListener("touchcancel", onTouchEnd);
-
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointerleave", onPointerUp);
-      canvas.removeEventListener("pointercancel", onPointerUp);
+      stage.removeEventListener("touchstart", onTouchStart);
+      stage.removeEventListener("touchmove", onTouchMove);
+      stage.removeEventListener("touchend", onTouchEnd);
+      stage.removeEventListener("pointerdown", onPointerDown);
+      stage.removeEventListener("pointermove", onPointerMove);
+      stage.removeEventListener("pointerup", onPointerUp);
+      stage.removeEventListener("pointercancel", onPointerUp);
     };
   }, [theme]);
 
-  /* ---------------- pitch mapping ---------------- */
-  const yToFreq = useCallback((yCss: number): number => {
-    const h = sizeRef.current.h || 1;
-    const t = 1 - Math.max(0, Math.min(1, yCss / h));
-    let freq = MIN_F * Math.pow(MAX_F / MIN_F, t);
-    if (scaleModeRef.current === "pentatonic")
-      freq = snapToScale(freq, PENTATONIC);
-    else if (scaleModeRef.current === "major") freq = snapToScale(freq, MAJOR);
-    return freq;
+  /* ---------------- pitch mapping math ---------------- */
+  const yToFreq = useCallback((yCss: number) => {
+    const { h } = sizeRef.current;
+    if (h === 0) return 440;
+    const clampedY = Math.max(0, Math.min(h, yCss));
+    const ratio = 1 - clampedY / h; // bottom = low, top = high
+    const rawFreq = MIN_F * Math.pow(MAX_F / MIN_F, ratio);
+
+    const mode = scaleModeRef.current;
+    if (mode === "pentatonic") return snapToScale(rawFreq, PENTATONIC);
+    if (mode === "major") return snapToScale(rawFreq, MAJOR);
+    return rawFreq; // free scale
   }, []);
 
-  /* ---------------- vector stroke column scanning ---------------- */
+  /* ---------------- intersection detection ---------------- */
   const getIntersections = useCallback(
     (xCss: number): Intersection[] => {
       const { h } = sizeRef.current;
@@ -476,8 +483,6 @@ export default function App() {
       );
       octx.restore();
 
-      if (!isPlayingRef.current) return;
-
       const isDark = theme === "dark";
       const x = currentScannerXRef.current;
       const grad = octx.createLinearGradient(0, 0, 0, h);
@@ -524,12 +529,27 @@ export default function App() {
   useEffect(() => {
     function frame(ts: number) {
       rafIdRef.current = requestAnimationFrame(frame);
-      if (!isPlayingRef.current) return;
-      if (startTimeRef.current === null) startTimeRef.current = ts;
-      const elapsed = (ts - startTimeRef.current) / 1000;
+
+      if (!isPlayingRef.current) {
+        const intersections = hasDrawnRef.current
+          ? getIntersections(currentScannerXRef.current)
+          : [];
+        drawOverlay(intersections);
+        return;
+      }
+
       const t = Math.max(0, Math.min(30, speedRef.current)) / 30;
       const loopDuration = 20 * Math.pow(0.15 / 20, t);
-      const progress = (elapsed % loopDuration) / loopDuration;
+
+      if (startTimeRef.current === null) {
+        const initialProgress = pausedProgressRef.current || 0;
+        startTimeRef.current = ts - initialProgress * loopDuration * 1000;
+      }
+
+      const elapsed = (ts - startTimeRef.current) / 1000;
+      const progress =
+        (((elapsed % loopDuration) + loopDuration) % loopDuration) / loopDuration;
+      pausedProgressRef.current = progress;
       currentScannerXRef.current = progress * sizeRef.current.w;
 
       const intersections = hasDrawnRef.current
@@ -551,14 +571,6 @@ export default function App() {
       if (next) {
         startTimeRef.current = null;
       } else {
-        const octx = octxRef.current;
-        const overlayCanvas = overlayCanvasRef.current;
-        if (overlayCanvas && octx) {
-          octx.save();
-          octx.setTransform(1, 0, 0, 1, 0, 0);
-          octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-          octx.restore();
-        }
         audioEngineRef.current?.stopAllVoices(true);
       }
       return next;
@@ -578,6 +590,8 @@ export default function App() {
   function handleClear() {
     strokesRef.current = [];
     currentStrokeRef.current = null;
+    pausedProgressRef.current = 0;
+    currentScannerXRef.current = 0;
 
     const drawCanvas = drawCanvasRef.current;
     const overlayCanvas = overlayCanvasRef.current;
