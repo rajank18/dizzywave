@@ -13,8 +13,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "dizzywave — geometry becomes music",
-  description: "A freehand canvas where geometry becomes music.",
+  title: "dizzywave — sound of your imagination",
+  description: "A freehand canvas where geometry becomes sound.",
+  icons: {
+    icon: "/logo.ico",
+    shortcut: "/logo.ico",
+    apple: "/logo.ico",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
