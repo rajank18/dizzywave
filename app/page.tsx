@@ -1,61 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Waveform, ScaleMode, Intersection } from "@/types/audio";
+import { MIN_F, MAX_F } from "@/constants/audio";
+import { PENTATONIC, MAJOR, snapToScale } from "@/utils/audio";
+import { AudioEngine } from "@/utils/audioEngine";
+import { Header } from "@/components/Header";
+import { CanvasStage } from "@/components/CanvasStage";
+import { ControlBar } from "@/components/ControlBar";
 
 /* ------------------------------------------------------------------ */
 /*  Draw the Sound — a freehand canvas where geometry becomes music.   */
 /*  X-axis = time, Y-axis = pitch, every intersection = a voice.       */
 /* ------------------------------------------------------------------ */
-
-type Waveform = "sine" | "triangle" | "sawtooth" | "square";
-type ScaleMode = "pentatonic" | "major" | "free";
-
-interface Voice {
-  id: number;
-  freq: number;
-  osc: OscillatorNode;
-  gain: GainNode;
-  missed: number;
-  releasing: boolean;
-}
-
-interface Intersection {
-  yCss: number;
-  freq: number;
-}
-
-const MIN_F = 110; // A2
-const MAX_F = 1174.7; // D6
-const MAX_VOICES = 12;
-const RELEASE_MISS_FRAMES = 9; // ~150ms @60fps before a note is released
-const MATCH_TOLERANCE = Math.pow(2, 3 / 12); // ~3 semitones counts as "the same" voice for glide
-
-function buildScaleFreqs(intervals: number[], baseMidi: number, count: number): number[] {
-  const freqs: number[] = [];
-  let octave = 0;
-  let i = 0;
-  while (freqs.length < count) {
-    const semitone = baseMidi + intervals[i % intervals.length] + 12 * octave;
-    freqs.push(440 * Math.pow(2, (semitone - 69) / 12));
-    i++;
-    if (i % intervals.length === 0) octave++;
-  }
-  return freqs;
-}
-
-const PENTATONIC = buildScaleFreqs([0, 2, 4, 7, 9], 45, 40);
-const MAJOR = buildScaleFreqs([0, 2, 4, 5, 7, 9, 11], 45, 40);
-
-function snapToScale(freq: number, table: number[]): number {
-  let best = table[0];
-  let bestDist = Infinity;
-  for (const f of table) {
-    const d = Math.abs(Math.log2(f / freq));
-    if (d < bestDist) {
-      bestDist = d;
-      best = f;
-    }
-  }
-  return best;
-}
 
 export default function App() {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -74,6 +31,11 @@ export default function App() {
   const [hasDrawn, setHasDrawn] = useState(false);
   const [voiceCount, setVoiceCount] = useState(0);
 
+  const audioEngineRef = useRef<AudioEngine | null>(null);
+  if (audioEngineRef.current == null) {
+    audioEngineRef.current = new AudioEngine();
+  }
+
   // mirror state into refs so the rAF loop always reads fresh values
   // without needing to be re-created on every render
   const waveformRef = useRef(waveform);
@@ -84,33 +46,24 @@ export default function App() {
 
   useEffect(() => {
     waveformRef.current = waveform;
-    voicesRef.current.forEach((v) => {
-      try {
-        v.osc.type = waveform;
-      } catch {
-        /* voice already stopped */
-      }
-    });
+    audioEngineRef.current?.updateWaveform(waveform);
   }, [waveform]);
+
   useEffect(() => {
     scaleModeRef.current = scaleMode;
   }, [scaleMode]);
+
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
+
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
   useEffect(() => {
     hasDrawnRef.current = hasDrawn;
   }, [hasDrawn]);
-
-  // ---- audio engine state (imperative, lives in refs) ----
-  const actxRef = useRef<AudioContext | null>(null);
-  const masterRef = useRef<GainNode | null>(null);
-  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
-  const voicesRef = useRef<Voice[]>([]);
-  const voiceIdRef = useRef(0);
 
   // ---- drawing state ----
   const drawingRef = useRef(false);
@@ -129,14 +82,34 @@ export default function App() {
       const overlayCanvas = overlayCanvasRef.current;
       if (!stage || !drawCanvas || !overlayCanvas) return;
 
+      const rect = stage.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
       const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5));
       dprRef.current = dpr;
-      const rect = stage.getBoundingClientRect();
+
+      const oldW = drawCanvas.width;
+      const oldH = drawCanvas.height;
+      const newW = Math.round(rect.width * dpr);
+      const newH = Math.round(rect.height * dpr);
+
+      if (oldW === newW && oldH === newH) return;
+
+      // Preserve existing drawing buffer on viewport resize (e.g. mobile address bar toggling)
+      let tempCanvas: HTMLCanvasElement | null = null;
+      if (oldW > 0 && oldH > 0 && dctxRef.current) {
+        tempCanvas = document.createElement("canvas");
+        tempCanvas.width = oldW;
+        tempCanvas.height = oldH;
+        const tempCtx = tempCanvas.getContext("2d");
+        if (tempCtx) tempCtx.drawImage(drawCanvas, 0, 0);
+      }
+
       sizeRef.current = { w: rect.width, h: rect.height };
 
       [drawCanvas, overlayCanvas].forEach((c) => {
-        c.width = Math.round(rect.width * dpr);
-        c.height = Math.round(rect.height * dpr);
+        c.width = newW;
+        c.height = newH;
       });
 
       const dctx = drawCanvas.getContext("2d", { willReadFrequently: true });
@@ -147,6 +120,13 @@ export default function App() {
         dctx.lineJoin = "round";
         dctx.strokeStyle = "#f2b880";
         dctx.lineWidth = 4.5;
+
+        if (tempCanvas) {
+          dctx.save();
+          dctx.setTransform(1, 0, 0, 1, 0, 0);
+          dctx.drawImage(tempCanvas, 0, 0);
+          dctx.restore();
+        }
       }
       if (octx) octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       dctxRef.current = dctx;
@@ -158,35 +138,50 @@ export default function App() {
     return () => window.removeEventListener("resize", resize);
   }, []);
 
-  /* ---------------- pointer / drawing input ---------------- */
+  /* ---------------- audio engine & iOS Web Audio unlock ---------------- */
+  useEffect(() => {
+    function warmAudio() {
+      audioEngineRef.current?.unlockAudio();
+      window.removeEventListener("touchstart", warmAudio);
+      window.removeEventListener("pointerdown", warmAudio);
+    }
+    window.addEventListener("touchstart", warmAudio, { passive: true });
+    window.addEventListener("pointerdown", warmAudio, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", warmAudio);
+      window.removeEventListener("pointerdown", warmAudio);
+    };
+  }, []);
+
+  /* ---------------- pointer & touch drawing input ---------------- */
   useEffect(() => {
     const canvas = drawCanvasRef.current;
     if (!canvas) return;
 
-    function pos(e: PointerEvent) {
+    function posFromCoords(clientX: number, clientY: number) {
       const rect = canvas!.getBoundingClientRect();
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      return { x: clientX - rect.left, y: clientY - rect.top };
     }
 
-    function onDown(e: PointerEvent) {
+    function startDraw(x: number, y: number) {
+      audioEngineRef.current?.unlockAudio();
       const dctx = dctxRef.current;
       if (!dctx) return;
       drawingRef.current = true;
       setHasDrawn(true);
-      const p = pos(e);
+      const p = { x, y };
       lastPosRef.current = p;
       dctx.beginPath();
       dctx.arc(p.x, p.y, dctx.lineWidth / 2, 0, Math.PI * 2);
       dctx.fillStyle = "#f2b880";
       dctx.fill();
-      canvas!.setPointerCapture(e.pointerId);
     }
 
-    function onMove(e: PointerEvent) {
+    function moveDraw(x: number, y: number) {
       if (!drawingRef.current) return;
       const dctx = dctxRef.current;
       if (!dctx) return;
-      const p = pos(e);
+      const p = { x, y };
       dctx.beginPath();
       dctx.moveTo(lastPosRef.current.x, lastPosRef.current.y);
       dctx.lineTo(p.x, p.y);
@@ -194,200 +189,154 @@ export default function App() {
       lastPosRef.current = p;
     }
 
-    function onUp() {
+    function stopDraw() {
       drawingRef.current = false;
     }
 
-    canvas.addEventListener("pointerdown", onDown);
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerup", onUp);
-    canvas.addEventListener("pointerleave", onUp);
-    canvas.addEventListener("pointercancel", onUp);
+    let isTouching = false;
+
+    // Explicit touch event handlers for Mobile Devices (iOS Safari & Android Chrome)
+    function onTouchStart(e: TouchEvent) {
+      if (e.cancelable) e.preventDefault();
+      isTouching = true;
+      if (e.touches.length > 0) {
+        const t = e.touches[0];
+        const p = posFromCoords(t.clientX, t.clientY);
+        startDraw(p.x, p.y);
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (e.cancelable) e.preventDefault();
+      if (e.touches.length > 0) {
+        const t = e.touches[0];
+        const p = posFromCoords(t.clientX, t.clientY);
+        moveDraw(p.x, p.y);
+      }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (e.cancelable) e.preventDefault();
+      isTouching = false;
+      stopDraw();
+    }
+
+    // Pointer event handlers for Desktop Mouse & Stylus Pen
+    function onPointerDown(e: PointerEvent) {
+      if (e.pointerType === "touch" || isTouching) return;
+      const p = posFromCoords(e.clientX, e.clientY);
+      startDraw(p.x, p.y);
+      try {
+        canvas!.setPointerCapture(e.pointerId);
+      } catch {
+        /* fallback */
+      }
+    }
+
+    function onPointerMove(e: PointerEvent) {
+      if (e.pointerType === "touch" || isTouching) return;
+      const p = posFromCoords(e.clientX, e.clientY);
+      moveDraw(p.x, p.y);
+    }
+
+    function onPointerUp(e: PointerEvent) {
+      if (e.pointerType === "touch" || isTouching) return;
+      stopDraw();
+    }
+
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd, { passive: false });
+    canvas.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointerleave", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+
     return () => {
-      canvas.removeEventListener("pointerdown", onDown);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointerleave", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("touchcancel", onTouchEnd);
+
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointerleave", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
     };
   }, []);
 
-  /* ---------------- audio engine ---------------- */
-  function ensureAudio() {
-    if (actxRef.current) return;
-    const AC = window.AudioContext || (window as any).webkitAudioContext;
-    const actx: AudioContext = new AC();
-    const compressor = actx.createDynamicsCompressor();
-    compressor.threshold.value = -18;
-    compressor.knee.value = 24;
-    compressor.ratio.value = 6;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.25;
-    const master = actx.createGain();
-    master.gain.value = 0.9;
-    master.connect(compressor);
-    compressor.connect(actx.destination);
-    actxRef.current = actx;
-    compressorRef.current = compressor;
-    masterRef.current = master;
-  }
-
-  function spawnVoice(freq: number): Voice {
-    const actx = actxRef.current!;
-    const master = masterRef.current!;
-    const osc = actx.createOscillator();
-    osc.type = waveformRef.current;
-    osc.frequency.value = freq;
-    const gain = actx.createGain();
-    gain.gain.value = 0.0001;
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start();
-    const now = actx.currentTime;
-    gain.gain.setTargetAtTime(0.22, now, 0.02);
-    const v: Voice = { id: voiceIdRef.current++, freq, osc, gain, missed: 0, releasing: false };
-    voicesRef.current.push(v);
-    return v;
-  }
-
-  function releaseVoice(v: Voice) {
-    if (v.releasing) return;
-    v.releasing = true;
-    const actx = actxRef.current;
-    if (actx) {
-      const now = actx.currentTime;
-      v.gain.gain.cancelScheduledValues(now);
-      v.gain.gain.setTargetAtTime(0.0001, now, 0.08);
-    }
-    setTimeout(() => {
-      try {
-        v.osc.stop();
-        v.osc.disconnect();
-        v.gain.disconnect();
-      } catch {
-        /* already stopped */
-      }
-      voicesRef.current = voicesRef.current.filter((x) => x.id !== v.id);
-    }, 400);
-  }
-
-  function stopAllVoices(instant: boolean) {
-    voicesRef.current.slice().forEach((v) => {
-      const actx = actxRef.current;
-      if (instant && actx) {
-        try {
-          v.gain.gain.cancelScheduledValues(actx.currentTime);
-          v.gain.gain.setTargetAtTime(0.0001, actx.currentTime, 0.03);
-        } catch {
-          /* no-op */
-        }
-      }
-      releaseVoice(v);
-    });
-  }
-
   /* ---------------- pitch mapping ---------------- */
-  function yToFreq(yCss: number): number {
+  const yToFreq = useCallback((yCss: number): number => {
     const h = sizeRef.current.h || 1;
     const t = 1 - Math.max(0, Math.min(1, yCss / h));
     let freq = MIN_F * Math.pow(MAX_F / MIN_F, t);
     if (scaleModeRef.current === "pentatonic") freq = snapToScale(freq, PENTATONIC);
     else if (scaleModeRef.current === "major") freq = snapToScale(freq, MAJOR);
     return freq;
-  }
+  }, []);
 
   /* ---------------- column scanning ---------------- */
-  function getIntersections(xCss: number): Intersection[] {
-    const dctx = dctxRef.current;
-    const drawCanvas = drawCanvasRef.current;
-    if (!dctx || !drawCanvas) return [];
-    const dpr = dprRef.current;
-    const px = Math.max(0, Math.min(drawCanvas.width - 1, Math.round(xCss * dpr)));
+  const getIntersections = useCallback(
+    (xCss: number): Intersection[] => {
+      const dctx = dctxRef.current;
+      const drawCanvas = drawCanvasRef.current;
+      if (!dctx || !drawCanvas) return [];
+      const dpr = dprRef.current;
+      const px = Math.max(
+        0,
+        Math.min(drawCanvas.width - 1, Math.round(xCss * dpr))
+      );
 
-    let imgData: ImageData;
-    try {
-      imgData = dctx.getImageData(px, 0, 1, drawCanvas.height);
-    } catch {
-      return [];
-    }
-    const data = imgData.data;
-    const h = drawCanvas.height;
-    const THRESH = 60;
-    const runs: [number, number][] = [];
-    let inRun = false;
-    let runStart = 0;
-    for (let py = 0; py < h; py++) {
-      const alpha = data[py * 4 + 3];
-      if (alpha > THRESH) {
-        if (!inRun) {
-          inRun = true;
-          runStart = py;
-        }
-      } else if (inRun) {
-        runs.push([runStart, py - 1]);
-        inRun = false;
+      let imgData: ImageData;
+      try {
+        imgData = dctx.getImageData(px, 0, 1, drawCanvas.height);
+      } catch {
+        return [];
       }
-    }
-    if (inRun) runs.push([runStart, h - 1]);
-
-    const merged: [number, number][] = [];
-    for (const r of runs) {
-      if (merged.length && r[0] - merged[merged.length - 1][1] < dpr * 3) {
-        merged[merged.length - 1][1] = r[1];
-      } else {
-        merged.push([r[0], r[1]]);
-      }
-    }
-
-    return merged.map((r) => {
-      const midPx = (r[0] + r[1]) / 2;
-      const yCss = midPx / dpr;
-      return { yCss, freq: yToFreq(yCss) };
-    });
-  }
-
-  /* ---------------- voice matching per frame ---------------- */
-  function updateVoices(intersections: Intersection[]) {
-    if (!actxRef.current) return;
-    const actx = actxRef.current;
-    const claimed = new Set<number>();
-    const tolLog = Math.log2(MATCH_TOLERANCE);
-
-    for (const it of intersections) {
-      let best: Voice | null = null;
-      let bestDist = Infinity;
-      for (const v of voicesRef.current) {
-        if (v.releasing || claimed.has(v.id)) continue;
-        const dist = Math.abs(Math.log2(v.freq / it.freq));
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = v;
+      const data = imgData.data;
+      const h = drawCanvas.height;
+      const THRESH = 60;
+      const runs: [number, number][] = [];
+      let inRun = false;
+      let runStart = 0;
+      for (let py = 0; py < h; py++) {
+        const alpha = data[py * 4 + 3];
+        if (alpha > THRESH) {
+          if (!inRun) {
+            inRun = true;
+            runStart = py;
+          }
+        } else if (inRun) {
+          runs.push([runStart, py - 1]);
+          inRun = false;
         }
       }
-      if (best && bestDist <= tolLog) {
-        claimed.add(best.id);
-        best.missed = 0;
-        best.freq = it.freq;
-        best.osc.frequency.setTargetAtTime(it.freq, actx.currentTime, 0.06);
-      } else {
-        if (voicesRef.current.length >= MAX_VOICES) {
-          const victim = voicesRef.current.reduce((a, b) => (a.missed >= b.missed ? a : b));
-          releaseVoice(victim);
-        }
-        const nv = spawnVoice(it.freq);
-        claimed.add(nv.id);
-      }
-    }
+      if (inRun) runs.push([runStart, h - 1]);
 
-    for (const v of voicesRef.current.slice()) {
-      if (claimed.has(v.id)) continue;
-      v.missed++;
-      if (v.missed > RELEASE_MISS_FRAMES) releaseVoice(v);
-    }
-  }
+      const merged: [number, number][] = [];
+      for (const r of runs) {
+        if (merged.length && r[0] - merged[merged.length - 1][1] < dpr * 3) {
+          merged[merged.length - 1][1] = r[1];
+        } else {
+          merged.push([r[0], r[1]]);
+        }
+      }
+
+      return merged.map((r) => {
+        const midPx = (r[0] + r[1]) / 2;
+        const yCss = midPx / dpr;
+        return { yCss, freq: yToFreq(yCss) };
+      });
+    },
+    [yToFreq]
+  );
 
   /* ---------------- overlay rendering ---------------- */
-  function drawOverlay(intersections: Intersection[]) {
+  const drawOverlay = useCallback((intersections: Intersection[]) => {
     const octx = octxRef.current;
     const { w, h } = sizeRef.current;
     if (!octx) return;
@@ -420,7 +369,7 @@ export default function App() {
       octx.fill();
       octx.restore();
     }
-  }
+  }, []);
 
   /* ---------------- main animation loop (mounted once) ---------------- */
   useEffect(() => {
@@ -433,27 +382,27 @@ export default function App() {
       const progress = (elapsed % loopDuration) / loopDuration;
       currentScannerXRef.current = progress * sizeRef.current.w;
 
-      const intersections = hasDrawnRef.current ? getIntersections(currentScannerXRef.current) : [];
-      updateVoices(intersections);
+      const intersections = hasDrawnRef.current
+        ? getIntersections(currentScannerXRef.current)
+        : [];
+      audioEngineRef.current?.updateVoices(intersections, waveformRef.current);
       drawOverlay(intersections);
-      setVoiceCount(voicesRef.current.filter((v) => !v.releasing).length);
+      setVoiceCount(audioEngineRef.current?.getActiveVoiceCount() || 0);
     }
     rafIdRef.current = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(rafIdRef.current);
-  }, []);
+  }, [getIntersections, drawOverlay]);
 
   /* ---------------- UI handlers ---------------- */
   function handlePlayClick() {
-    ensureAudio();
-    const actx = actxRef.current!;
-    if (actx.state === "suspended") actx.resume();
+    audioEngineRef.current?.unlockAudio();
     setIsPlaying((prev) => {
       const next = !prev;
       if (next) {
         startTimeRef.current = null;
       } else {
         octxRef.current?.clearRect(0, 0, sizeRef.current.w, sizeRef.current.h);
-        stopAllVoices(true);
+        audioEngineRef.current?.stopAllVoices(true);
       }
       return next;
     });
@@ -464,26 +413,17 @@ export default function App() {
     const { w, h } = sizeRef.current;
     dctx?.clearRect(0, 0, w, h);
     setHasDrawn(false);
-    stopAllVoices(true);
+    audioEngineRef.current?.stopAllVoices(true);
   }
-
-  const WAVES: { id: Waveform; label: string }[] = [
-    { id: "sine", label: "bell" },
-    { id: "triangle", label: "flute" },
-    { id: "sawtooth", label: "synth" },
-    { id: "square", label: "chip" },
-  ];
-  const SCALES: { id: ScaleMode; label: string }[] = [
-    { id: "pentatonic", label: "pentatonic" },
-    { id: "major", label: "major" },
-    { id: "free", label: "free" },
-  ];
 
   return (
     <div style={styles.app}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
-        * { box-sizing: border-box; }
+        * {
+          box-sizing: border-box;
+          -webkit-tap-highlight-color: transparent;
+        }
         input[type=range] {
           -webkit-appearance: none;
           appearance: none;
@@ -509,108 +449,29 @@ export default function App() {
         .dts-seg-btn:hover { color: #f5f1e8; }
       `}</style>
 
-      <header style={styles.header}>
-        <div style={styles.title}>
-          draw the <b style={styles.titleAccent}>sound</b>
-        </div>
-        <div style={styles.tagline}>geometry becomes music</div>
-      </header>
+      <Header styles={styles} />
 
-      <div ref={stageRef} style={styles.stage}>
-        <canvas ref={drawCanvasRef} style={{ ...styles.canvasBase, filter: "drop-shadow(0 0 6px rgba(242,184,128,0.55))" }} />
-        <canvas ref={overlayCanvasRef} style={{ ...styles.canvasBase, pointerEvents: "none" }} />
+      <CanvasStage
+        stageRef={stageRef}
+        drawCanvasRef={drawCanvasRef}
+        overlayCanvasRef={overlayCanvasRef}
+        hasDrawn={hasDrawn}
+        styles={styles}
+      />
 
-        {!hasDrawn && (
-          <div style={styles.hint}>
-            <svg width="140" height="50" viewBox="0 0 140 50" fill="none" style={{ opacity: 0.35 }}>
-              <path
-                d="M4 40 C 30 40, 30 10, 50 10 S 75 40, 95 40 S 115 15, 136 15"
-                stroke="#f2b880"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeDasharray="3 5"
-              />
-            </svg>
-            <p style={styles.hintText}>draw anything, then press play</p>
-          </div>
-        )}
-      </div>
-
-      <footer style={styles.footer}>
-        <button onClick={handlePlayClick} style={styles.playBtn} aria-label="Play or pause" title="Play / Pause">
-          {isPlaying ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <rect x="3" y="2" width="3.5" height="12" rx="1" />
-              <rect x="9.5" y="2" width="3.5" height="12" rx="1" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M3 1.5v13l11-6.5-11-6.5z" />
-            </svg>
-          )}
-        </button>
-
-        <button onClick={handleClear} style={styles.clearBtn}>
-          clear
-        </button>
-
-        <div style={styles.group}>
-          <span style={styles.groupLabel}>tone</span>
-          <div style={styles.seg}>
-            {WAVES.map((w, i) => (
-              <button
-                key={w.id}
-                className="dts-seg-btn"
-                onClick={() => setWaveform(w.id)}
-                style={{
-                  ...styles.segBtn,
-                  ...(i < WAVES.length - 1 ? styles.segBtnBorder : {}),
-                  ...(waveform === w.id ? styles.segBtnActiveTeal : {}),
-                }}
-              >
-                {w.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={styles.group}>
-          <span style={styles.groupLabel}>scale</span>
-          <div style={styles.seg}>
-            {SCALES.map((s, i) => (
-              <button
-                key={s.id}
-                className="dts-seg-btn"
-                onClick={() => setScaleMode(s.id)}
-                style={{
-                  ...styles.segBtn,
-                  ...(i < SCALES.length - 1 ? styles.segBtnBorder : {}),
-                  ...(scaleMode === s.id ? styles.segBtnActiveTeal : {}),
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={styles.group}>
-          <span style={styles.groupLabel}>speed</span>
-          <input
-            type="range"
-            min={3}
-            max={20}
-            step={0.5}
-            value={speed}
-            onChange={(e) => setSpeed(parseFloat(e.target.value))}
-          />
-        </div>
-
-        <div style={{ flex: "1 1 auto" }} />
-        <div style={styles.voiceCount}>
-          {voiceCount} <b style={{ color: "#7dd3c0", fontWeight: 600 }}>{voiceCount === 1 ? "voice" : "voices"}</b>
-        </div>
-      </footer>
+      <ControlBar
+        isPlaying={isPlaying}
+        onPlayClick={handlePlayClick}
+        onClear={handleClear}
+        waveform={waveform}
+        setWaveform={setWaveform}
+        scaleMode={scaleMode}
+        setScaleMode={setScaleMode}
+        speed={speed}
+        setSpeed={setSpeed}
+        voiceCount={voiceCount}
+        styles={styles}
+      />
     </div>
   );
 }
@@ -632,6 +493,8 @@ const styles: Record<string, React.CSSProperties> = {
       "radial-gradient(ellipse 700px 400px at 100% 110%, rgba(125,211,192,0.05), transparent 60%)," +
       "#0a0b12",
     overflow: "hidden",
+    WebkitUserSelect: "none",
+    userSelect: "none",
   },
   header: {
     flex: "0 0 auto",
@@ -663,9 +526,14 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "0 16px",
     borderRadius: 14,
     overflow: "hidden",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.015), transparent 40%), #111320",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.015), transparent 40%), #111320",
     border: "1px solid rgba(242,184,128,0.12)",
-    boxShadow: "0 40px 80px -40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03)",
+    boxShadow:
+      "0 40px 80px -40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03)",
+    touchAction: "none",
+    WebkitUserSelect: "none",
+    userSelect: "none",
   },
   canvasBase: {
     position: "absolute",
@@ -707,7 +575,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "linear-gradient(180deg, rgba(242,184,128,0.16), rgba(242,184,128,0.05))",
+    background:
+      "linear-gradient(180deg, rgba(242,184,128,0.16), rgba(242,184,128,0.05))",
     border: "1px solid rgba(242,184,128,0.35)",
     color: "#f2b880",
     flex: "0 0 auto",
