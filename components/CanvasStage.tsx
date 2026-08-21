@@ -21,7 +21,7 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
         borderColor: "var(--stage-border)",
         boxShadow: "var(--stage-shadow)",
       }}
-      className="flex-1 min-h-0 max-h-[62dvh] md:max-h-[70dvh] relative mx-2 md:mx-4 rounded-xl overflow-hidden select-none touch-none border transition-all duration-300"
+      className="flex-1 min-h-0 max-h-[62dvh] md:max-h-none relative mx-2 md:mx-4 rounded-xl overflow-hidden select-none touch-none border transition-all duration-300"
     >
       <canvas
         ref={drawCanvasRef}
