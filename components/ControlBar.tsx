@@ -109,12 +109,26 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         </div>
       </div>
 
-      {/* Tone Segmented Control (Strict 4 pills per row, TONE label aligned top at start of first pill) */}
-      <div className="flex items-start gap-2 flex-none">
-        <span className="text-[10px] md:text-[11px] tracking-[0.09em] uppercase text-[var(--subtext)] mr-1 flex-none pt-1.5 md:pt-2">
+      {/* Tone Segmented Control (Desktop: 1 single row | Mobile: 2 stacked rows) */}
+      <div className="flex items-start md:items-center gap-2 flex-none">
+        <span className="text-[10px] md:text-[11px] tracking-[0.09em] uppercase text-[var(--subtext)] mr-1 flex-none pt-1.5 md:pt-0">
           tones
         </span>
-        <div className="flex flex-col gap-1.5 flex-none">
+
+        {/* Desktop Single Horizontal Row (md:flex, hidden on mobile) */}
+        <div className="hidden md:flex flex-none">
+          <SegmentedControl<Waveform>
+            hideLabel
+            options={WAVES}
+            value={waveform}
+            onChange={setWaveform}
+            disabledIds={disabledWaveforms}
+            onToggleDisable={onToggleWaveformDisable}
+          />
+        </div>
+
+        {/* Mobile 2-Row Stacked (flex md:hidden on mobile) */}
+        <div className="flex md:hidden flex-col gap-1.5 flex-none">
           <SegmentedControl<Waveform>
             hideLabel
             options={WAVES.slice(0, 4)}
@@ -154,7 +168,8 @@ export const ControlBar: React.FC<ControlBarProps> = ({
           className="text-[#f6ab3e] font-bold underline"
         >
           RAJAN
-        </a><span className="text-[11px] text-[#f6ab3e]">♡</span>
+        </a>
+        <span className="text-[11px] text-[#f6ab3e]">♡</span>
       </div>
     </footer>
   );
