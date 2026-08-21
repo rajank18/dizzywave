@@ -5,7 +5,6 @@ interface CanvasStageProps {
   drawCanvasRef: RefObject<HTMLCanvasElement | null>;
   overlayCanvasRef: RefObject<HTMLCanvasElement | null>;
   hasDrawn: boolean;
-  styles: Record<string, React.CSSProperties>;
 }
 
 export const CanvasStage: React.FC<CanvasStageProps> = ({
@@ -13,40 +12,45 @@ export const CanvasStage: React.FC<CanvasStageProps> = ({
   drawCanvasRef,
   overlayCanvasRef,
   hasDrawn,
-  styles,
 }) => {
   return (
-    <div ref={stageRef} style={styles.stage}>
+    <div
+      ref={stageRef}
+      style={{
+        background: "var(--stage-bg)",
+        borderColor: "var(--stage-border)",
+        boxShadow: "var(--stage-shadow)",
+      }}
+      className="flex-1 min-h-0 max-h-[62dvh] md:max-h-[70dvh] relative mx-2 md:mx-4 rounded-xl overflow-hidden select-none touch-none border transition-all duration-300"
+    >
       <canvas
         ref={drawCanvasRef}
-        style={{
-          ...styles.canvasBase,
-          filter: "drop-shadow(0 0 6px rgba(242,184,128,0.55))",
-        }}
+        className="absolute inset-0 w-full h-full touch-none drop-shadow-[0_0_6px_rgba(242,184,128,0.55)]"
       />
       <canvas
         ref={overlayCanvasRef}
-        style={{ ...styles.canvasBase, pointerEvents: "none" }}
+        className="absolute inset-0 w-full h-full touch-none pointer-events-none"
       />
 
       {!hasDrawn && (
-        <div style={styles.hint}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 pointer-events-none">
           <svg
             width="140"
             height="50"
             viewBox="0 0 140 50"
             fill="none"
-            style={{ opacity: 0.35 }}
+            className="opacity-70 dark:opacity-60"
           >
             <path
-              d="M4 40 C 30 40, 30 10, 50 10 S 75 40, 95 40 S 115 15, 136 15"
-              stroke="#f2b880"
-              strokeWidth="1.6"
+              d="M10 25 C30 5, 50 45, 70 25 C90 5, 110 45, 130 25"
+              stroke="#f6ab3e"
+              strokeWidth="2.5"
               strokeLinecap="round"
-              strokeDasharray="3 5"
             />
           </svg>
-          <p style={styles.hintText}>draw anything, then press play</p>
+          <div className="text-[11px] tracking-[0.08em] uppercase text-[var(--subtext)] font-mono">
+            Draw anywhere to create sound
+          </div>
         </div>
       )}
     </div>

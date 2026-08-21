@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Waveform, ScaleMode, Intersection } from "@/types/audio";
-import { MIN_F, MAX_F } from "@/constants/audio";
+import { Waveform, ScaleMode, Intersection, Stroke } from "@/types/audio";
+import { MIN_F, MAX_F, TONE_COLORS } from "@/constants/audio";
 import { PENTATONIC, MAJOR, snapToScale } from "@/utils/audio";
 import { AudioEngine } from "@/utils/audioEngine";
 import { Header } from "@/components/Header";
@@ -10,8 +10,7 @@ import { CanvasStage } from "@/components/CanvasStage";
 import { ControlBar } from "@/components/ControlBar";
 
 /* ------------------------------------------------------------------ */
-/*  Draw the Sound — a freehand canvas where geometry becomes music.   */
-/*  X-axis = time, Y-axis = pitch, every intersection = a voice.       */
+/*  dizzywave — freehand polyphonic multi-timbral canvas synthesis.   */
 /* ------------------------------------------------------------------ */
 
 export default function App() {
@@ -24,10 +23,14 @@ export default function App() {
   const dprRef = useRef(1);
   const sizeRef = useRef({ w: 0, h: 0 });
 
-  const [waveform, setWaveform] = useState<Waveform>("sine");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [waveform, setWaveform] = useState<Waveform>("sine"); // active drawing brush tone
+  const [disabledWaveforms, setDisabledWaveforms] = useState<Set<Waveform>>(
+    new Set()
+  );
   const [scaleMode, setScaleMode] = useState<ScaleMode>("pentatonic");
-  const [speed, setSpeed] = useState(8); // loop duration, seconds
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState(8);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [hasDrawn, setHasDrawn] = useState(false);
   const [voiceCount, setVoiceCount] = useState(0);
 
@@ -36,24 +39,108 @@ export default function App() {
     audioEngineRef.current = new AudioEngine();
   }
 
-  // mirror state into refs so the rAF loop always reads fresh values
-  // without needing to be re-created on every render
+  // Vector strokes database
+  const strokesRef = useRef<Stroke[]>([]);
+  const currentStrokeRef = useRef<Stroke | null>(null);
+
+  // Sync state to refs for high-performance rAF loop
   const waveformRef = useRef(waveform);
+  const disabledWaveformsRef = useRef(disabledWaveforms);
   const scaleModeRef = useRef(scaleMode);
   const speedRef = useRef(speed);
   const isPlayingRef = useRef(isPlaying);
   const hasDrawnRef = useRef(hasDrawn);
 
+  /* ---------------- stroke redrawing ---------------- */
+  const redrawAllStrokes = useCallback(() => {
+    const dctx = dctxRef.current;
+    const drawCanvas = drawCanvasRef.current;
+    if (!dctx || !drawCanvas) return;
+
+    const { w, h } = sizeRef.current;
+    if (w === 0 || h === 0) return;
+
+    const dpr = dprRef.current;
+    dctx.save();
+    dctx.setTransform(1, 0, 0, 1, 0, 0);
+    dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    dctx.restore();
+
+    dctx.save();
+    dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dctx.lineCap = "round";
+    dctx.lineJoin = "round";
+    dctx.lineWidth = 4.5;
+
+    const isDark = theme === "dark";
+
+    for (const stroke of strokesRef.current) {
+      if (stroke.points.length === 0) continue;
+      const colorObj = TONE_COLORS[stroke.waveform] || TONE_COLORS.sine;
+      const color = isDark ? colorObj.darkHex : colorObj.hex;
+      dctx.strokeStyle = color;
+      dctx.fillStyle = color;
+
+      if (stroke.points.length === 1) {
+        const p = stroke.points[0];
+        dctx.beginPath();
+        dctx.arc(p.x, p.y, dctx.lineWidth / 2, 0, Math.PI * 2);
+        dctx.fill();
+      } else {
+        dctx.beginPath();
+        dctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for (let i = 1; i < stroke.points.length; i++) {
+          dctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        }
+        dctx.stroke();
+      }
+    }
+    dctx.restore();
+  }, [theme]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+      root.setAttribute("data-theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      root.setAttribute("data-theme", "light");
+    }
+    redrawAllStrokes();
+  }, [theme, redrawAllStrokes]);
+
   useEffect(() => {
     waveformRef.current = waveform;
-    audioEngineRef.current?.updateWaveform(waveform);
   }, [waveform]);
+
+  useEffect(() => {
+    disabledWaveformsRef.current = disabledWaveforms;
+  }, [disabledWaveforms]);
 
   useEffect(() => {
     scaleModeRef.current = scaleMode;
   }, [scaleMode]);
 
   useEffect(() => {
+    const calcDuration = (val: number) => {
+      const t = Math.max(0, Math.min(30, val)) / 30;
+      return 20 * Math.pow(0.15 / 20, t);
+    };
+    const oldSpeedVal = speedRef.current;
+    if (
+      oldSpeedVal !== speed &&
+      startTimeRef.current !== null &&
+      isPlayingRef.current
+    ) {
+      const oldDuration = calcDuration(oldSpeedVal);
+      const newDuration = calcDuration(speed);
+      const now = performance.now();
+      const elapsed = (now - startTimeRef.current) / 1000;
+      const progress =
+        (((elapsed % oldDuration) + oldDuration) % oldDuration) / oldDuration;
+      startTimeRef.current = now - progress * newDuration * 1000;
+    }
     speedRef.current = speed;
   }, [speed]);
 
@@ -73,6 +160,8 @@ export default function App() {
   const startTimeRef = useRef<number | null>(null);
   const rafIdRef = useRef<number>(0);
   const currentScannerXRef = useRef(0);
+
+
 
   /* ---------------- canvas sizing ---------------- */
   useEffect(() => {
@@ -95,16 +184,6 @@ export default function App() {
 
       if (oldW === newW && oldH === newH) return;
 
-      // Preserve existing drawing buffer on viewport resize (e.g. mobile address bar toggling)
-      let tempCanvas: HTMLCanvasElement | null = null;
-      if (oldW > 0 && oldH > 0 && dctxRef.current) {
-        tempCanvas = document.createElement("canvas");
-        tempCanvas.width = oldW;
-        tempCanvas.height = oldH;
-        const tempCtx = tempCanvas.getContext("2d");
-        if (tempCtx) tempCtx.drawImage(drawCanvas, 0, 0);
-      }
-
       sizeRef.current = { w: rect.width, h: rect.height };
 
       [drawCanvas, overlayCanvas].forEach((c) => {
@@ -112,33 +191,27 @@ export default function App() {
         c.height = newH;
       });
 
-      const dctx = drawCanvas.getContext("2d", { willReadFrequently: true });
+      const dctx = drawCanvas.getContext("2d");
       const octx = overlayCanvas.getContext("2d");
       if (dctx) {
         dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         dctx.lineCap = "round";
         dctx.lineJoin = "round";
-        dctx.strokeStyle = "#f2b880";
         dctx.lineWidth = 4.5;
-
-        if (tempCanvas) {
-          dctx.save();
-          dctx.setTransform(1, 0, 0, 1, 0, 0);
-          dctx.drawImage(tempCanvas, 0, 0);
-          dctx.restore();
-        }
       }
       if (octx) octx.setTransform(dpr, 0, 0, dpr, 0, 0);
       dctxRef.current = dctx;
       octxRef.current = octx;
+
+      redrawAllStrokes();
     }
 
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, []);
+  }, [theme, redrawAllStrokes]);
 
-  /* ---------------- audio engine & iOS Web Audio unlock ---------------- */
+  /* ---------------- iOS Web Audio unlock ---------------- */
   useEffect(() => {
     function warmAudio() {
       audioEngineRef.current?.unlockAudio();
@@ -169,33 +242,54 @@ export default function App() {
       if (!dctx) return;
       drawingRef.current = true;
       setHasDrawn(true);
+
+      const activeTone = waveformRef.current;
+      const colorObj = TONE_COLORS[activeTone] || TONE_COLORS.sine;
+      const color = theme === "dark" ? colorObj.darkHex : colorObj.hex;
+
       const p = { x, y };
       lastPosRef.current = p;
+
+      const stroke: Stroke = {
+        id: Math.random().toString(),
+        waveform: activeTone,
+        points: [p],
+      };
+      currentStrokeRef.current = stroke;
+      strokesRef.current.push(stroke);
+
       dctx.beginPath();
       dctx.arc(p.x, p.y, dctx.lineWidth / 2, 0, Math.PI * 2);
-      dctx.fillStyle = "#f2b880";
+      dctx.fillStyle = color;
       dctx.fill();
     }
 
     function moveDraw(x: number, y: number) {
-      if (!drawingRef.current) return;
+      if (!drawingRef.current || !currentStrokeRef.current) return;
       const dctx = dctxRef.current;
       if (!dctx) return;
       const p = { x, y };
+      currentStrokeRef.current.points.push(p);
+
+      const activeTone = currentStrokeRef.current.waveform;
+      const colorObj = TONE_COLORS[activeTone] || TONE_COLORS.sine;
+      const color = theme === "dark" ? colorObj.darkHex : colorObj.hex;
+
       dctx.beginPath();
       dctx.moveTo(lastPosRef.current.x, lastPosRef.current.y);
       dctx.lineTo(p.x, p.y);
+      dctx.strokeStyle = color;
       dctx.stroke();
       lastPosRef.current = p;
     }
 
     function stopDraw() {
       drawingRef.current = false;
+      currentStrokeRef.current = null;
     }
 
     let isTouching = false;
 
-    // Explicit touch event handlers for Mobile Devices (iOS Safari & Android Chrome)
     function onTouchStart(e: TouchEvent) {
       if (e.cancelable) e.preventDefault();
       isTouching = true;
@@ -221,7 +315,6 @@ export default function App() {
       stopDraw();
     }
 
-    // Pointer event handlers for Desktop Mouse & Stylus Pen
     function onPointerDown(e: PointerEvent) {
       if (e.pointerType === "touch" || isTouching) return;
       const p = posFromCoords(e.clientX, e.clientY);
@@ -267,109 +360,165 @@ export default function App() {
       canvas.removeEventListener("pointerleave", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
     };
-  }, []);
+  }, [theme]);
 
   /* ---------------- pitch mapping ---------------- */
   const yToFreq = useCallback((yCss: number): number => {
     const h = sizeRef.current.h || 1;
     const t = 1 - Math.max(0, Math.min(1, yCss / h));
     let freq = MIN_F * Math.pow(MAX_F / MIN_F, t);
-    if (scaleModeRef.current === "pentatonic") freq = snapToScale(freq, PENTATONIC);
+    if (scaleModeRef.current === "pentatonic")
+      freq = snapToScale(freq, PENTATONIC);
     else if (scaleModeRef.current === "major") freq = snapToScale(freq, MAJOR);
     return freq;
   }, []);
 
-  /* ---------------- column scanning ---------------- */
+  /* ---------------- vector stroke column scanning ---------------- */
   const getIntersections = useCallback(
     (xCss: number): Intersection[] => {
-      const dctx = dctxRef.current;
-      const drawCanvas = drawCanvasRef.current;
-      if (!dctx || !drawCanvas) return [];
-      const dpr = dprRef.current;
-      const px = Math.max(
-        0,
-        Math.min(drawCanvas.width - 1, Math.round(xCss * dpr))
-      );
+      const { h } = sizeRef.current;
+      if (!h || strokesRef.current.length === 0) return [];
 
-      let imgData: ImageData;
-      try {
-        imgData = dctx.getImageData(px, 0, 1, drawCanvas.height);
-      } catch {
-        return [];
-      }
-      const data = imgData.data;
-      const h = drawCanvas.height;
-      const THRESH = 60;
-      const runs: [number, number][] = [];
-      let inRun = false;
-      let runStart = 0;
-      for (let py = 0; py < h; py++) {
-        const alpha = data[py * 4 + 3];
-        if (alpha > THRESH) {
-          if (!inRun) {
-            inRun = true;
-            runStart = py;
+      const rawIntersections: { yCss: number; strokeWave: Waveform }[] = [];
+      const disabledSet = disabledWaveformsRef.current;
+
+      for (const stroke of strokesRef.current) {
+        const points = stroke.points;
+        if (points.length === 0) continue;
+
+        if (points.length === 1) {
+          const p = points[0];
+          if (Math.abs(p.x - xCss) <= 2.5) {
+            rawIntersections.push({ yCss: p.y, strokeWave: stroke.waveform });
           }
-        } else if (inRun) {
-          runs.push([runStart, py - 1]);
-          inRun = false;
+          continue;
+        }
+
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const minX = Math.min(p1.x, p2.x);
+          const maxX = Math.max(p1.x, p2.x);
+
+          if (xCss >= minX - 0.5 && xCss <= maxX + 0.5) {
+            const dx = p2.x - p1.x;
+            if (Math.abs(dx) > 0.001) {
+              const t = (xCss - p1.x) / dx;
+              if (t >= 0 && t <= 1) {
+                const yCss = p1.y + t * (p2.y - p1.y);
+                rawIntersections.push({
+                  yCss,
+                  strokeWave: stroke.waveform,
+                });
+              }
+            } else {
+              const midY = (p1.y + p2.y) / 2;
+              rawIntersections.push({
+                yCss: midY,
+                strokeWave: stroke.waveform,
+              });
+            }
+          }
         }
       }
-      if (inRun) runs.push([runStart, h - 1]);
 
-      const merged: [number, number][] = [];
-      for (const r of runs) {
-        if (merged.length && r[0] - merged[merged.length - 1][1] < dpr * 3) {
-          merged[merged.length - 1][1] = r[1];
+      if (rawIntersections.length === 0) return [];
+
+      rawIntersections.sort((a, b) => a.yCss - b.yCss);
+
+      const merged: Intersection[] = [];
+      const currentActiveWave = waveformRef.current;
+
+      for (const item of rawIntersections) {
+        if (
+          merged.length > 0 &&
+          Math.abs(item.yCss - merged[merged.length - 1].yCss) < 4.5
+        ) {
+          // skip duplicate overlap
         } else {
-          merged.push([r[0], r[1]]);
+          const isWaveDisabled = disabledSet.has(item.strokeWave);
+          const effectiveWave = isWaveDisabled
+            ? currentActiveWave
+            : item.strokeWave;
+          const colorObj =
+            TONE_COLORS[effectiveWave] || TONE_COLORS[item.strokeWave] || TONE_COLORS.sine;
+          const color = theme === "dark" ? colorObj.darkHex : colorObj.hex;
+
+          merged.push({
+            yCss: item.yCss,
+            freq: yToFreq(item.yCss),
+            waveform: effectiveWave,
+            color,
+          });
         }
       }
 
-      return merged.map((r) => {
-        const midPx = (r[0] + r[1]) / 2;
-        const yCss = midPx / dpr;
-        return { yCss, freq: yToFreq(yCss) };
-      });
+      return merged;
     },
-    [yToFreq]
+    [yToFreq, theme]
   );
 
   /* ---------------- overlay rendering ---------------- */
-  const drawOverlay = useCallback((intersections: Intersection[]) => {
-    const octx = octxRef.current;
-    const { w, h } = sizeRef.current;
-    if (!octx) return;
-    octx.clearRect(0, 0, w, h);
-    if (!isPlayingRef.current) return;
+  const drawOverlay = useCallback(
+    (intersections: Intersection[]) => {
+      const octx = octxRef.current;
+      const overlayCanvas = overlayCanvasRef.current;
+      const { w, h } = sizeRef.current;
+      if (!octx) return;
 
-    const x = currentScannerXRef.current;
-    const grad = octx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "rgba(125,211,192,0.05)");
-    grad.addColorStop(0.5, "rgba(125,211,192,0.9)");
-    grad.addColorStop(1, "rgba(125,211,192,0.05)");
-    octx.save();
-    octx.shadowColor = "rgba(125,211,192,0.8)";
-    octx.shadowBlur = 12;
-    octx.strokeStyle = grad;
-    octx.lineWidth = 1.6;
-    octx.beginPath();
-    octx.moveTo(x, 0);
-    octx.lineTo(x, h);
-    octx.stroke();
-    octx.restore();
-
-    for (const it of intersections) {
       octx.save();
-      octx.shadowColor = "rgba(255,220,160,0.95)";
-      octx.shadowBlur = 18;
-      octx.fillStyle = "#ffe6bd";
-      octx.beginPath();
-      octx.arc(x, it.yCss, 5, 0, Math.PI * 2);
-      octx.fill();
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      octx.clearRect(
+        0,
+        0,
+        overlayCanvas?.width || w * 2,
+        overlayCanvas?.height || h * 2
+      );
       octx.restore();
-    }
-  }, []);
+
+      if (!isPlayingRef.current) return;
+
+      const isDark = theme === "dark";
+      const x = currentScannerXRef.current;
+      const grad = octx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(
+        0,
+        isDark ? "rgba(125,211,192,0.05)" : "rgba(13,148,136,0.05)"
+      );
+      grad.addColorStop(
+        0.5,
+        isDark ? "rgba(125,211,192,0.9)" : "rgba(13,148,136,0.9)"
+      );
+      grad.addColorStop(
+        1,
+        isDark ? "rgba(125,211,192,0.05)" : "rgba(13,148,136,0.05)"
+      );
+      octx.save();
+      octx.shadowColor = isDark
+        ? "rgba(125,211,192,0.8)"
+        : "rgba(13,148,136,0.6)";
+      octx.shadowBlur = 12;
+      octx.strokeStyle = grad;
+      octx.lineWidth = 1.6;
+      octx.beginPath();
+      octx.moveTo(x, 0);
+      octx.lineTo(x, h);
+      octx.stroke();
+      octx.restore();
+
+      for (const it of intersections) {
+        octx.save();
+        octx.shadowColor = it.color;
+        octx.shadowBlur = 18;
+        octx.fillStyle = it.color;
+        octx.beginPath();
+        octx.arc(x, it.yCss, 5.5, 0, Math.PI * 2);
+        octx.fill();
+        octx.restore();
+      }
+    },
+    [theme]
+  );
 
   /* ---------------- main animation loop (mounted once) ---------------- */
   useEffect(() => {
@@ -378,7 +527,8 @@ export default function App() {
       if (!isPlayingRef.current) return;
       if (startTimeRef.current === null) startTimeRef.current = ts;
       const elapsed = (ts - startTimeRef.current) / 1000;
-      const loopDuration = speedRef.current;
+      const t = Math.max(0, Math.min(30, speedRef.current)) / 30;
+      const loopDuration = 20 * Math.pow(0.15 / 20, t);
       const progress = (elapsed % loopDuration) / loopDuration;
       currentScannerXRef.current = progress * sizeRef.current.w;
 
@@ -401,230 +551,106 @@ export default function App() {
       if (next) {
         startTimeRef.current = null;
       } else {
-        octxRef.current?.clearRect(0, 0, sizeRef.current.w, sizeRef.current.h);
+        const octx = octxRef.current;
+        const overlayCanvas = overlayCanvasRef.current;
+        if (overlayCanvas && octx) {
+          octx.save();
+          octx.setTransform(1, 0, 0, 1, 0, 0);
+          octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+          octx.restore();
+        }
         audioEngineRef.current?.stopAllVoices(true);
       }
       return next;
     });
   }
 
+  function handleUndo() {
+    if (strokesRef.current.length === 0) return;
+    strokesRef.current.pop();
+    if (strokesRef.current.length === 0) {
+      setHasDrawn(false);
+    }
+    redrawAllStrokes();
+    audioEngineRef.current?.stopAllVoices(false);
+  }
+
   function handleClear() {
+    strokesRef.current = [];
+    currentStrokeRef.current = null;
+
+    const drawCanvas = drawCanvasRef.current;
+    const overlayCanvas = overlayCanvasRef.current;
     const dctx = dctxRef.current;
-    const { w, h } = sizeRef.current;
-    dctx?.clearRect(0, 0, w, h);
+    const octx = octxRef.current;
+
+    if (drawCanvas && dctx) {
+      dctx.save();
+      dctx.setTransform(1, 0, 0, 1, 0, 0);
+      dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      dctx.restore();
+      dctx.beginPath();
+    }
+
+    if (overlayCanvas && octx) {
+      octx.save();
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      octx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      octx.restore();
+    }
+
     setHasDrawn(false);
     audioEngineRef.current?.stopAllVoices(true);
   }
 
-  return (
-    <div style={styles.app}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
-        * {
-          box-sizing: border-box;
-          -webkit-tap-highlight-color: transparent;
-        }
-        input[type=range] {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 96px;
-          height: 2px;
-          background: rgba(255,255,255,0.15);
-          border-radius: 2px;
-          outline: none;
-        }
-        input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 12px; height: 12px;
-          border-radius: 50%;
-          background: #7dd3c0;
-          box-shadow: 0 0 8px rgba(125,211,192,0.65);
-          cursor: pointer;
-          margin-top: -5px;
-        }
-        input[type=range]::-moz-range-thumb {
-          width: 12px; height: 12px; border: none; border-radius: 50%;
-          background: #7dd3c0; box-shadow: 0 0 8px rgba(125,211,192,0.65); cursor: pointer;
-        }
-        .dts-seg-btn:hover { color: #f5f1e8; }
-      `}</style>
+  function handleToggleWaveformDisable(w: Waveform) {
+    setDisabledWaveforms((prev) => {
+      const next = new Set(prev);
+      if (next.has(w)) {
+        next.delete(w);
+      } else {
+        next.add(w);
+      }
+      return next;
+    });
+  }
 
-      <Header styles={styles} />
+  return (
+    <div
+      data-theme={theme}
+      style={{
+        background: "var(--bg-app)",
+        color: "var(--text-app)",
+      }}
+      className="flex flex-col h-dvh w-full m-0 font-mono overflow-hidden select-none transition-colors duration-300"
+    >
+      <Header
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+      />
 
       <CanvasStage
         stageRef={stageRef}
         drawCanvasRef={drawCanvasRef}
         overlayCanvasRef={overlayCanvasRef}
         hasDrawn={hasDrawn}
-        styles={styles}
       />
 
       <ControlBar
         isPlaying={isPlaying}
         onPlayClick={handlePlayClick}
+        onUndo={handleUndo}
         onClear={handleClear}
         waveform={waveform}
         setWaveform={setWaveform}
+        disabledWaveforms={disabledWaveforms}
+        onToggleWaveformDisable={handleToggleWaveformDisable}
         scaleMode={scaleMode}
         setScaleMode={setScaleMode}
         speed={speed}
         setSpeed={setSpeed}
         voiceCount={voiceCount}
-        styles={styles}
       />
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  Styles                                                              */
-/* ------------------------------------------------------------------ */
-const styles: Record<string, React.CSSProperties> = {
-  app: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100dvh",
-    width: "100%",
-    margin: 0,
-    fontFamily: "'JetBrains Mono', monospace",
-    color: "#f5f1e8",
-    background:
-      "radial-gradient(ellipse 900px 500px at 50% -10%, rgba(242,184,128,0.06), transparent 60%)," +
-      "radial-gradient(ellipse 700px 400px at 100% 110%, rgba(125,211,192,0.05), transparent 60%)," +
-      "#0a0b12",
-    overflow: "hidden",
-    WebkitUserSelect: "none",
-    userSelect: "none",
-  },
-  header: {
-    flex: "0 0 auto",
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    padding: "18px 24px 10px",
-    gap: 16,
-  },
-  title: {
-    fontFamily: "'Instrument Serif', serif",
-    fontSize: 28,
-    fontStyle: "italic",
-    letterSpacing: 0.3,
-    color: "#f5f1e8",
-    lineHeight: 1,
-  },
-  titleAccent: { fontStyle: "normal", color: "#f2b880", fontWeight: 400 },
-  tagline: {
-    fontSize: 11,
-    letterSpacing: "0.06em",
-    textTransform: "uppercase",
-    color: "#565a72",
-    whiteSpace: "nowrap",
-  },
-  stage: {
-    flex: "1 1 auto",
-    position: "relative",
-    margin: "0 16px",
-    borderRadius: 14,
-    overflow: "hidden",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.015), transparent 40%), #111320",
-    border: "1px solid rgba(242,184,128,0.12)",
-    boxShadow:
-      "0 40px 80px -40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03)",
-    touchAction: "none",
-    WebkitUserSelect: "none",
-    userSelect: "none",
-  },
-  canvasBase: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: "100%",
-    touchAction: "none",
-  },
-  hint: {
-    position: "absolute",
-    inset: 0,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    pointerEvents: "none",
-  },
-  hintText: {
-    margin: 0,
-    fontSize: 12,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-    color: "#565a72",
-  },
-  footer: {
-    flex: "0 0 auto",
-    padding: "14px 20px 20px",
-    display: "flex",
-    alignItems: "center",
-    gap: 22,
-    flexWrap: "wrap",
-  },
-  playBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background:
-      "linear-gradient(180deg, rgba(242,184,128,0.16), rgba(242,184,128,0.05))",
-    border: "1px solid rgba(242,184,128,0.35)",
-    color: "#f2b880",
-    flex: "0 0 auto",
-    cursor: "pointer",
-  },
-  clearBtn: {
-    padding: "10px 14px",
-    fontSize: 11,
-    letterSpacing: "0.05em",
-    fontFamily: "'JetBrains Mono', monospace",
-    background: "transparent",
-    border: "1px solid rgba(255,255,255,0.1)",
-    color: "#8b8ea3",
-    borderRadius: 8,
-    cursor: "pointer",
-  },
-  group: { display: "flex", alignItems: "center", gap: 8 },
-  groupLabel: {
-    fontSize: 10,
-    letterSpacing: "0.09em",
-    textTransform: "uppercase",
-    color: "#565a72",
-    marginRight: 2,
-  },
-  seg: {
-    display: "flex",
-    border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  segBtn: {
-    border: "none",
-    borderRadius: 0,
-    padding: "9px 12px",
-    fontSize: 11,
-    letterSpacing: "0.03em",
-    color: "#565a72",
-    background: "transparent",
-    fontFamily: "'JetBrains Mono', monospace",
-    cursor: "pointer",
-  },
-  segBtnBorder: { borderRight: "1px solid rgba(255,255,255,0.08)" },
-  segBtnActiveTeal: { background: "rgba(125,211,192,0.14)", color: "#7dd3c0" },
-  voiceCount: {
-    fontSize: 10,
-    color: "#565a72",
-    letterSpacing: "0.05em",
-    minWidth: 64,
-    textAlign: "right",
-  },
-};

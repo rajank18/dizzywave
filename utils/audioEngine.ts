@@ -56,32 +56,108 @@ export class AudioEngine {
     }
   }
 
-  public updateWaveform(waveform: Waveform): void {
-    this.voices.forEach((v) => {
-      try {
-        v.osc.type = waveform;
-      } catch {
-        /* voice already stopped */
-      }
-    });
+  public updateWaveform(): void {
+    this.stopAllVoices(true);
   }
 
   public spawnVoice(freq: number, waveform: Waveform): Voice | null {
     if (!this.actx || !this.master) return null;
+    const now = this.actx.currentTime;
+
     const osc = this.actx.createOscillator();
-    osc.type = waveform;
-    osc.frequency.value = freq;
     const gain = this.actx.createGain();
     gain.gain.value = 0.0001;
-    osc.connect(gain);
+
+    let osc2: OscillatorNode | undefined;
+    let gain2: GainNode | undefined;
+
+    if (waveform === "sine") {
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.gain.setTargetAtTime(0.24, now, 0.015);
+    } else if (waveform === "triangle") {
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.gain.setTargetAtTime(0.24, now, 0.015);
+    } else if (waveform === "sawtooth") {
+      osc.type = "sawtooth";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.gain.setTargetAtTime(0.18, now, 0.015);
+    } else if (waveform === "square") {
+      osc.type = "square";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.gain.setTargetAtTime(0.16, now, 0.015);
+    } else if (waveform === "arcade") {
+      // 8-Bit Retro Pulse
+      osc.type = "square";
+      osc.frequency.value = freq;
+
+      osc2 = this.actx.createOscillator();
+      osc2.type = "square";
+      osc2.frequency.value = freq * 1.005;
+
+      gain2 = this.actx.createGain();
+      gain2.gain.value = 0.1;
+      osc2.connect(gain2);
+      gain2.connect(gain);
+
+      osc.connect(gain);
+      osc2.start(now);
+      gain.gain.setTargetAtTime(0.18, now, 0.01);
+    } else if (waveform === "organ") {
+      // Light Blue Organ (Fundamental + 2.0x drawbar octave)
+      osc.type = "sine";
+      osc.frequency.value = freq;
+
+      osc2 = this.actx.createOscillator();
+      osc2.type = "sine";
+      osc2.frequency.value = freq * 2.0;
+
+      gain2 = this.actx.createGain();
+      gain2.gain.value = 0.18;
+      osc2.connect(gain2);
+      gain2.connect(gain);
+
+      osc.connect(gain);
+      osc2.start(now);
+      gain.gain.setTargetAtTime(0.22, now, 0.02);
+    } else if (waveform === "crystal") {
+      // Dark Blue Glass Crystal (Fundamental + 2.76x metallic glass chime overtone)
+      osc.type = "sine";
+      osc.frequency.value = freq;
+
+      osc2 = this.actx.createOscillator();
+      osc2.type = "sine";
+      osc2.frequency.value = freq * 2.76;
+
+      gain2 = this.actx.createGain();
+      gain2.gain.value = 0.22;
+      osc2.connect(gain2);
+      gain2.connect(gain);
+
+      osc.connect(gain);
+      osc2.start(now);
+      gain.gain.setTargetAtTime(0.26, now, 0.008);
+    } else {
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      gain.gain.setTargetAtTime(0.22, now, 0.02);
+    }
+
     gain.connect(this.master);
-    osc.start();
-    const now = this.actx.currentTime;
-    gain.gain.setTargetAtTime(0.22, now, 0.02);
+    osc.start(now);
+
     const v: Voice = {
       id: this.voiceId++,
       freq,
+      waveform,
       osc,
+      osc2,
       gain,
       missed: 0,
       releasing: false,
@@ -102,6 +178,10 @@ export class AudioEngine {
       try {
         v.osc.stop();
         v.osc.disconnect();
+        if (v.osc2) {
+          v.osc2.stop();
+          v.osc2.disconnect();
+        }
         v.gain.disconnect();
       } catch {
         /* already stopped */
@@ -124,7 +204,10 @@ export class AudioEngine {
     });
   }
 
-  public updateVoices(intersections: Intersection[], waveform: Waveform): void {
+  public updateVoices(
+    intersections: Intersection[],
+    fallbackWaveform: Waveform
+  ): void {
     if (!this.actx) return;
     const claimed = new Set<number>();
     const tolLog = Math.log2(MATCH_TOLERANCE);
@@ -132,19 +215,39 @@ export class AudioEngine {
     for (const it of intersections) {
       let best: Voice | null = null;
       let bestDist = Infinity;
+      const targetWave = it.waveform || fallbackWaveform;
+
       for (const v of this.voices) {
         if (v.releasing || claimed.has(v.id)) continue;
+        if (v.waveform !== targetWave) continue;
         const dist = Math.abs(Math.log2(v.freq / it.freq));
         if (dist < bestDist) {
           bestDist = dist;
           best = v;
         }
       }
+
       if (best && bestDist <= tolLog) {
         claimed.add(best.id);
         best.missed = 0;
         best.freq = it.freq;
-        best.osc.frequency.setTargetAtTime(it.freq, this.actx.currentTime, 0.06);
+        best.osc.frequency.setTargetAtTime(
+          it.freq,
+          this.actx.currentTime,
+          0.06
+        );
+
+        if (best.osc2) {
+          let mult = 1.0;
+          if (targetWave === "arcade") mult = 1.005;
+          else if (targetWave === "organ") mult = 2.0;
+          else if (targetWave === "crystal") mult = 2.76;
+          best.osc2.frequency.setTargetAtTime(
+            it.freq * mult,
+            this.actx.currentTime,
+            0.06
+          );
+        }
       } else {
         if (this.voices.length >= MAX_VOICES) {
           const victim = this.voices.reduce((a, b) =>
@@ -152,7 +255,7 @@ export class AudioEngine {
           );
           this.releaseVoice(victim);
         }
-        const nv = this.spawnVoice(it.freq, waveform);
+        const nv = this.spawnVoice(it.freq, targetWave);
         if (nv) claimed.add(nv.id);
       }
     }

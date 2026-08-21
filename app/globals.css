@@ -1,26 +1,148 @@
+@import url('https://fonts.googleapis.com/css2?family=Elsie:wght@400;900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
+
+@font-face {
+  font-family: 'Dazed';
+  src: url('/Dazed.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+:root, [data-theme="dark"] {
+  --bg-app: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(242,184,128,0.06), transparent 60%), radial-gradient(ellipse 700px 400px at 100% 110%, rgba(125,211,192,0.05), transparent 60%), #0a0b12;
+  --text-app: #f5f1e8;
+  --stage-bg: linear-gradient(180deg, rgba(255,255,255,0.015), transparent 40%), #111320;
+  --stage-border: rgba(242, 184, 128, 0.12);
+  --stage-shadow: 0 40px 80px -40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03);
+  --play-btn-bg: linear-gradient(180deg, rgba(242,184,128,0.16), rgba(242,184,128,0.05));
+  --play-btn-border: rgba(242,184,128,0.35);
+  --play-btn-color: #f2b880;
+  --subtext: #8b8ea3;
+  --btn-border: rgba(255,255,255,0.1);
+  --btn-hover-bg: rgba(255,255,255,0.05);
+  --teal-active-bg: rgba(125,211,192,0.14);
+  --teal-active-color: #7dd3c0;
+}
+
+[data-theme="light"] {
+  --bg-app: radial-gradient(ellipse 900px 500px at 50% -10%, rgba(242,184,128,0.18), transparent 60%), radial-gradient(ellipse 700px 400px at 100% 110%, rgba(125,211,192,0.18), transparent 60%), #f6f5f0;
+  --text-app: #1f2028;
+  --stage-bg: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(255,255,255,0.4) 40%), #ffffff;
+  --stage-border: rgba(217, 119, 36, 0.22);
+  --stage-shadow: 0 20px 40px -20px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9);
+  --play-btn-bg: linear-gradient(180deg, rgba(217,119,36,0.18), rgba(217,119,36,0.06));
+  --play-btn-border: rgba(217,119,36,0.4);
+  --play-btn-color: #d97724;
+  --subtext: #5d6075;
+  --btn-border: rgba(0,0,0,0.14);
+  --btn-hover-bg: rgba(0,0,0,0.05);
+  --teal-active-bg: rgba(13,148,136,0.14);
+  --teal-active-color: #0d9488;
+}
+
+/* Range Slider Styling with Perfect Alignment */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 96px;
+  height: 14px;
+  background: transparent;
+  outline: none;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+/* WebKit Track */
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+}
+
+[data-theme="dark"] input[type=range]::-webkit-slider-runnable-track {
+  background: rgba(255, 255, 255, 0.18);
+}
+[data-theme="light"] input[type=range]::-webkit-slider-runnable-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* WebKit Thumb */
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  margin-top: -5.5px;
+  cursor: pointer;
+}
+
+[data-theme="dark"] input[type=range]::-webkit-slider-thumb {
+  background: #7dd3c0;
+  box-shadow: 0 0 8px rgba(125, 211, 192, 0.65);
+}
+[data-theme="light"] input[type=range]::-webkit-slider-thumb {
+  background: #0d9488;
+  box-shadow: 0 0 8px rgba(13, 148, 136, 0.5);
+}
+
+/* Firefox Track */
+input[type=range]::-moz-range-track {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+}
+
+[data-theme="dark"] input[type=range]::-moz-range-track {
+  background: rgba(255, 255, 255, 0.18);
+}
+[data-theme="light"] input[type=range]::-moz-range-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Firefox Thumb */
+input[type=range]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+[data-theme="dark"] input[type=range]::-moz-range-thumb {
+  background: #7dd3c0;
+  box-shadow: 0 0 8px rgba(125, 211, 192, 0.65);
+}
+[data-theme="light"] input[type=range]::-moz-range-thumb {
+  background: #0d9488;
+  box-shadow: 0 0 8px rgba(13, 148, 136, 0.5);
+}
+
+.dts-seg-btn:hover {
+  color: var(--text-app);
 }

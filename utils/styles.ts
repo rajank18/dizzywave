@@ -1,0 +1,200 @@
+import React from "react";
+
+export function getStyles(theme: "dark" | "light"): Record<string, React.CSSProperties> {
+  const isDark = theme === "dark";
+  return {
+    app: {
+      display: "flex",
+      flexDirection: "column",
+      height: "100dvh",
+      width: "100%",
+      margin: 0,
+      fontFamily: "'JetBrains Mono', monospace",
+      color: isDark ? "#f5f1e8" : "#1f2028",
+      background: isDark
+        ? "radial-gradient(ellipse 900px 500px at 50% -10%, rgba(242,184,128,0.06), transparent 60%), radial-gradient(ellipse 700px 400px at 100% 110%, rgba(125,211,192,0.05), transparent 60%), #0a0b12"
+        : "radial-gradient(ellipse 900px 500px at 50% -10%, rgba(242,184,128,0.18), transparent 60%), radial-gradient(ellipse 700px 400px at 100% 110%, rgba(125,211,192,0.18), transparent 60%), #f6f5f0",
+      overflow: "hidden",
+      WebkitUserSelect: "none",
+      userSelect: "none",
+      transition: "background 0.3s ease, color 0.3s ease",
+    },
+    header: {
+      flex: "0 0 auto",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "16px 24px 10px",
+      gap: 16,
+    },
+    title: {
+      fontSize: 28,
+      letterSpacing: 0.3,
+      color: isDark ? "#f5f1e8" : "#1f2028",
+      lineHeight: 1,
+      display: "flex",
+      alignItems: "baseline",
+    },
+    dizzyPrefix: {
+      fontFamily: "'Dazed', sans-serif",
+      fontWeight: "normal",
+      fontStyle: "normal",
+      color: isDark ? "#f5f1e8" : "#1f2028",
+      marginRight: 2,
+    },
+    titleAccent: {
+      fontFamily: "'Elsie', serif",
+      fontStyle: "normal",
+      color: "#f2b880",
+      fontWeight: 900,
+    },
+    headerRight: {
+      display: "flex",
+      alignItems: "center",
+      gap: 14,
+    },
+    tagline: {
+      fontSize: 11,
+      letterSpacing: "0.06em",
+      textTransform: "uppercase",
+      color: isDark ? "#8b8ea3" : "#6c7087",
+      whiteSpace: "nowrap",
+    },
+    themeBtn: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: 34,
+      height: 34,
+      borderRadius: "50%",
+      border: isDark ? "1px solid rgba(255,255,255,0.14)" : "1px solid rgba(0,0,0,0.15)",
+      background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)",
+      color: isDark ? "#f6ab3e" : "#f6ab3e",
+      cursor: "pointer",
+      transition: "all 0.2s ease",
+    },
+    stage: {
+      flex: "1 1 auto",
+      position: "relative",
+      margin: "0 16px",
+      borderRadius: 14,
+      overflow: "hidden",
+      background: isDark
+        ? "linear-gradient(180deg, rgba(255,255,255,0.015), transparent 40%), #111320"
+        : "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(255,255,255,0.4) 40%), #ffffff",
+      border: isDark ? "1px solid rgba(242,184,128,0.12)" : "1px solid rgba(217,119,36,0.22)",
+      boxShadow: isDark
+        ? "0 40px 80px -40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03)"
+        : "0 20px 40px -20px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
+      touchAction: "none",
+      WebkitUserSelect: "none",
+      userSelect: "none",
+    },
+    canvasBase: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      touchAction: "none",
+    },
+    hint: {
+      position: "absolute",
+      inset: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 10,
+      pointerEvents: "none",
+    },
+    hintText: {
+      margin: 0,
+      fontSize: 12,
+      letterSpacing: "0.08em",
+      textTransform: "uppercase",
+      color: isDark ? "#8b8ea3" : "#6c7087",
+    },
+    footer: {
+      flex: "0 0 auto",
+      padding: "14px 20px 20px",
+      display: "flex",
+      alignItems: "center",
+      gap: 22,
+      flexWrap: "wrap",
+    },
+    playBtn: {
+      width: 46,
+      height: 46,
+      borderRadius: "50%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: isDark
+        ? "linear-gradient(180deg, rgba(242,184,128,0.16), rgba(242,184,128,0.05))"
+        : "linear-gradient(180deg, rgba(217,119,36,0.18), rgba(217,119,36,0.06))",
+      border: isDark ? "1px solid rgba(242,184,128,0.35)" : "1px solid rgba(217,119,36,0.4)",
+      color: isDark ? "#f2b880" : "#d97724",
+      flex: "0 0 auto",
+      cursor: "pointer",
+    },
+    clearBtn: {
+      padding: "10px 14px",
+      fontSize: 11,
+      letterSpacing: "0.05em",
+      fontFamily: "'JetBrains Mono', monospace",
+      background: "transparent",
+      border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.14)",
+      color: isDark ? "#8b8ea3" : "#5d6075",
+      borderRadius: 8,
+      cursor: "pointer",
+    },
+    group: { display: "flex", alignItems: "center", gap: 8 },
+    groupLabel: {
+      fontSize: 10,
+      letterSpacing: "0.09em",
+      textTransform: "uppercase",
+      color: isDark ? "#8b8ea3" : "#5d6075",
+      marginRight: 2,
+    },
+    speedValue: {
+      fontSize: 10,
+      color: isDark ? "#7dd3c0" : "#0d9488",
+      letterSpacing: "0.03em",
+      minWidth: 26,
+    },
+    seg: {
+      display: "flex",
+      border: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.14)",
+      borderRadius: 8,
+      overflow: "hidden",
+    },
+    segBtn: {
+      border: "none",
+      borderRadius: 0,
+      padding: "9px 12px",
+      fontSize: 11,
+      letterSpacing: "0.03em",
+      color: isDark ? "#8b8ea3" : "#5d6075",
+      background: "transparent",
+      fontFamily: "'JetBrains Mono', monospace",
+      cursor: "pointer",
+    },
+    segBtnBorder: {
+      borderRight: isDark
+        ? "1px solid rgba(255,255,255,0.08)"
+        : "1px solid rgba(0,0,0,0.08)",
+    },
+    segBtnActiveTeal: {
+      background: isDark ? "rgba(125,211,192,0.14)" : "rgba(13,148,136,0.14)",
+      color: isDark ? "#7dd3c0" : "#0d9488",
+    },
+    voiceCount: {
+      fontSize: 10,
+      color: isDark ? "#8b8ea3" : "#6c7087",
+      letterSpacing: "0.05em",
+      minWidth: 64,
+      textAlign: "right",
+    },
+  };
+}
