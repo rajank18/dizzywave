@@ -40,13 +40,16 @@ export const InstallPwaModal: React.FC = () => {
     const isLocalNetworkHttp =
       window.location.protocol === "http:" && window.location.hostname !== "localhost";
 
-    // Chrome / Android / Desktop beforeinstallprompt handler
-    function handleBeforeInstallPrompt(e: Event) {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    function handleAppInstalled() {
+      fetch("/api/pwa-install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "browser_appinstalled" }),
+      }).catch(() => {});
     }
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
 
     // Wait exactly 30 seconds of site use before showing install modal
     const showTimer = setTimeout(() => {
@@ -60,6 +63,7 @@ export const InstallPwaModal: React.FC = () => {
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
       clearTimeout(showTimer);
     };
   }, []);
@@ -71,6 +75,11 @@ export const InstallPwaModal: React.FC = () => {
         const choiceResult = await deferredPrompt.userChoice;
         if (choiceResult.outcome === "accepted") {
           localStorage.setItem("dizzywave_pwa_installed", "true");
+          fetch("/api/pwa-install", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source: "modal_install_button" }),
+          }).catch(() => {});
           setShowModal(false);
         }
       } catch {
