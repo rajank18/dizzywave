@@ -11,6 +11,7 @@ export class AudioEngine {
   private compressor: DynamicsCompressorNode | null = null;
   private voices: Voice[] = [];
   private voiceId = 0;
+  private silentAudioEl: HTMLAudioElement | null = null;
 
   public ensureAudio(): void {
     if (this.actx) return;
@@ -42,7 +43,7 @@ export class AudioEngine {
   public unlockAudio(): void {
     this.ensureAudio();
     if (!this.actx) return;
-    if (this.actx.state === "suspended") {
+    if (this.actx.state !== "running") {
       this.actx.resume().catch(() => {});
     }
     try {
@@ -53,6 +54,28 @@ export class AudioEngine {
       source.start(0);
     } catch {
       /* no-op */
+    }
+
+    // iOS Silent Mode Switch Override Hack (HTML5 silent WAV loop switches iOS to Playback category)
+    if (typeof window !== "undefined" && !this.silentAudioEl) {
+      try {
+        const silentWavData =
+          "data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+        const el = document.createElement("audio");
+        el.setAttribute("x-webkit-airplay", "deny");
+        el.preload = "auto";
+        el.loop = true;
+        el.src = silentWavData;
+        const p = el.play();
+        if (p !== undefined) {
+          p.catch(() => {});
+        }
+        this.silentAudioEl = el;
+      } catch {
+        /* no-op */
+      }
+    } else if (this.silentAudioEl && this.silentAudioEl.paused) {
+      this.silentAudioEl.play().catch(() => {});
     }
   }
 
@@ -209,6 +232,9 @@ export class AudioEngine {
     fallbackWaveform: Waveform
   ): void {
     if (!this.actx) return;
+    if (this.actx.state !== "running") {
+      this.actx.resume().catch(() => {});
+    }
     const claimed = new Set<number>();
     const tolLog = Math.log2(MATCH_TOLERANCE);
 
