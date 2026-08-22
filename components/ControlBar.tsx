@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Waveform, ScaleMode } from "@/types/audio";
 import { WAVES, SCALES } from "@/constants/audio";
 import { SegmentedControl } from "./SegmentedControl";
@@ -33,6 +33,25 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   speed,
   setSpeed,
 }) => {
+  const [isIndian, setIsIndian] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      return tz.includes("Kolkata") || tz.includes("Calcutta") || tz.includes("India");
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    fetch("https://ipapi.co/json/")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.country_code === "IN") {
+          setIsIndian(true);
+        }
+      })
+      .catch(() => { });
+  }, []);
+
   return (
     <footer className="flex-none px-3 py-2 md:px-6 md:py-2.5 flex items-center justify-between gap-3 md:gap-5 flex-wrap max-w-full overflow-hidden">
       {/* Row 1 on Mobile: Action Buttons (Play, Undo, Clear) + Speed Slider on same line! */}
@@ -158,18 +177,60 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         />
       </div>
 
-      {/* Credit */}
-      <div className="text-[11px] md:text-[12px] text-[var(--subtext)] tracking-[0.05em] flex-none ml-auto">
-        Built by{" "}
-        <a
-          href="https://github.com/rajank18"
-          target="_blank"
-          rel="noreferrer"
-          className="text-[#f6ab3e] font-bold underline"
-        >
-          RAJAN
-        </a>
-        <span className="text-[11px] text-[#f6ab3e]">♡</span>
+      {/* Credit & Dynamic Buy Me A Chai / Cookie */}
+      <div className="flex items-center justify-between w-full md:w-auto gap-2.5 md:gap-3 flex-none md:ml-auto">
+        <div className="text-[11px] md:text-[12px] text-[var(--subtext)] tracking-[0.05em] flex-none">
+          Built by{" "}
+          <a
+            href="https://github.com/rajank18"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#f6ab3e] font-bold underline"
+          >
+            RAJAN
+          </a>
+          <span className="text-[11px] text-[#f6ab3e]">♡</span>
+        </div>
+
+        {isIndian ? (
+          <a
+            href="https://buymeachai.ezee.li/rajank18"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] md:text-[11px] font-mono font-bold rounded-md bg-[#f6ab3e] text-black hover:scale-105 transition-transform border border-black/30 shadow-sm"
+            title="Buy Me A Chai"
+            aria-label="Buy Me A Chai"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-3.5 w-3.5 text-black"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M6 8h11v4a5 5 0 0 1-5 5H11a5 5 0 0 1-5-5V8Z" />
+              <path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17" />
+              <path d="M8 4c0 1 .5 1.5.5 2.5S8 8 8 8" />
+              <path d="M12 4c0 1 .5 1.5.5 2.5S12 8 12 8" />
+              <path d="M15 4c0 1 .5 1.5.5 2.5S15 8 15 8" />
+            </svg>
+            <span>Buy me a Chai</span>
+          </a>
+        ) : (
+          <a
+            href="https://buymeacoffee.com/rajank18"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] md:text-[11px] font-mono font-bold rounded-md bg-[#f6ab3e] text-black hover:scale-105 transition-transform border border-black/30 shadow-sm"
+            title="Buy me a cookie on Buy Me a Coffee"
+          >
+            <span>🍪</span>
+            <span>Buy me a cookie</span>
+          </a>
+        )}
       </div>
     </footer>
   );
