@@ -37,20 +37,34 @@ export const ControlBar: React.FC<ControlBarProps> = ({
 
   useEffect(() => {
     let active = true;
+
+    // Initial estimation from browser timezone
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
     if (tz.includes("Kolkata") || tz.includes("Calcutta") || tz.includes("India")) {
       setTimeout(() => {
         if (active) setIsIndian(true);
       }, 0);
     }
-    fetch("https://ipapi.co/json/")
+
+    // IP Geolocation check (overrides timezone for VPNs & real IP locations)
+    fetch("https://api.country.is")
       .then((res) => res.json())
       .then((data) => {
-        if (active && data && data.country_code === "IN") {
-          setIsIndian(true);
+        if (active && data && data.country) {
+          setIsIndian(data.country.toUpperCase() === "IN");
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        fetch("https://ipapi.co/json/")
+          .then((res) => res.json())
+          .then((data) => {
+            if (active && data && data.country_code) {
+              setIsIndian(data.country_code.toUpperCase() === "IN");
+            }
+          })
+          .catch(() => {});
+      });
+
     return () => {
       active = false;
     };
