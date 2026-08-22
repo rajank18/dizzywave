@@ -53,7 +53,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   }, []);
 
   return (
-    <footer className="flex-none px-3 py-2 md:px-6 md:py-2.5 flex items-center justify-between gap-3 md:gap-5 flex-wrap max-w-full overflow-hidden">
+    <footer className="flex-none px-3 py-2 md:px-6 md:pt-2 flex items-center justify-between gap-3 md:gap-1 flex-wrap max-w-full overflow-hidden">
       {/* Row 1 on Mobile: Action Buttons (Play, Undo, Clear) + Speed Slider on same line! */}
       <div className="flex items-center justify-between gap-2.5 md:gap-4 flex-none w-full md:w-auto">
         <div className="flex items-center gap-1.5 md:gap-3 flex-none">
