@@ -18,7 +18,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://dizzywave.vercel.ap
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "dizzywave - sound of your imagination",
+    default: "dizzywave - the sound of your imagination",
     template: "%s | dizzywave",
   },
   description:
@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "dizzywave - sound of your imagination",
+    title: "dizzywave - the sound of your imagination",
     description:
       "Turn your drawings into sound and music in real time. Draw to sound, sketch to music, and transform geometry into polyphonic synth music.",
     url: siteUrl,
@@ -64,7 +64,7 @@ export const metadata: Metadata = {
         url: "/logo.ico",
         width: 512,
         height: 512,
-        alt: "dizzywave - sound of your imagination",
+        alt: "dizzywave - the sound of your imagination",
       },
     ],
     locale: "en_US",
@@ -72,7 +72,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "dizzywave - sound of your imagination",
+    title: "dizzywave - the sound of your imagination",
     description:
       "Turn your drawings into sound and music in real time. Draw to sound, sketch to music, and transform geometry into polyphonic synth music.",
     images: ["/logo.ico"],
@@ -89,7 +89,7 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
   name: "dizzywave",
-  alternateName: "dizzywave - sound of your imagination",
+  alternateName: "dizzywave - the sound of your imagination",
   url: siteUrl,
   description:
     "Turn your drawings into sound and music in real time. Dizzywave is a freehand visual sound canvas where geometry becomes polyphonic synth music.",

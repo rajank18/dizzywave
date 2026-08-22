@@ -26,8 +26,16 @@ export const InstallPwaModal: React.FC = () => {
       (navigator as unknown as { standalone?: boolean }).standalone;
     if (isInstalled || isStandalone) return;
 
-    // Check for iOS or local HTTP IP
+    // Only show on mobile and tablet devices (hide on PC / Desktop)
     const userAgent = window.navigator.userAgent.toLowerCase();
+    const isMobileOrTablet =
+      /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i.test(
+        userAgent
+      ) ||
+      (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+
+    if (!isMobileOrTablet) return;
+
     const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
     const isLocalNetworkHttp =
       window.location.protocol === "http:" && window.location.hostname !== "localhost";
@@ -83,7 +91,7 @@ export const InstallPwaModal: React.FC = () => {
   if (!showModal) return null;
 
   return (
-    <div className="fixed md:top-14 top-12  md:right-3 right-2 z-50 w-auto max-w-[270px] sm:max-w-xs animate-in fade-in slide-in-from-top duration-300">
+    <div className="fixed md:top-14 top-12 md:right-3 right-2 z-50 lg:hidden w-auto max-w-[270px] sm:max-w-xs animate-in fade-in slide-in-from-top duration-300">
       <div className="bg-[var(--bg-app)] border border-[var(--stage-border)] p-1 rounded-2xl backdrop-blur-xl flex flex-col ">
         <div className="flex items-start justify-between gap-1">
           <div className="flex items-center gap-1">

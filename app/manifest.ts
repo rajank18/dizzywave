@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "dizzywave - sound of your imagination",
+    name: "dizzywave - the sound of your imagination",
     short_name: "dizzywave",
     description: "A freehand canvas where geometry becomes sound.",
     start_url: "/",
