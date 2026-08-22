@@ -122,7 +122,7 @@ export const InstallPwaModal: React.FC = () => {
               onClick={handleInstallClick}
               className="flex-1 py-1 px-1.5 text-[9px] sm:text-[11px] font-mono font-bold uppercase tracking-wider rounded-lg bg-[#f6ab3e] text-black hover:scale-[1.02] transition-transform  cursor-pointer"
             >
-              Install App 📱
+              Install App
             </button>
             <button
               onClick={handleDismiss}
