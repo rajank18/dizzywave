@@ -48,7 +48,7 @@ export const InstallPwaModal: React.FC = () => {
         setIsHttpIp(true);
       }
       setShowModal(true);
-    }, 3000);
+    }, 30000);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);

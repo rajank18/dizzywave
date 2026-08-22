@@ -11,7 +11,7 @@ import { ControlBar } from "@/components/ControlBar";
 import { InstallPwaModal } from "@/components/InstallPwaModal";
 
 /* ------------------------------------------------------------------ */
-/*  dizzywave — freehand polyphonic multi-timbral canvas synthesis.   */
+/*  dizzywave - freehand polyphonic multi-timbral canvas synthesis.   */
 /* ------------------------------------------------------------------ */
 
 export default function App() {

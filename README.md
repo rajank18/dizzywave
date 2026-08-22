@@ -1,6 +1,6 @@
 # dizzywave
 
-> **geometry becomes music** — a freehand canvas where drawn geometry generates real-time polyphonic audio voices.
+> **geometry becomes music** - a freehand canvas where drawn geometry generates real-time polyphonic audio voices.
 
 ## Getting Started
 
