@@ -40,6 +40,11 @@ export const InstallPwaModal: React.FC = () => {
     const isLocalNetworkHttp =
       window.location.protocol === "http:" && window.location.hostname !== "localhost";
 
+    function handleBeforeInstallPrompt(e: Event) {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    }
+
     function handleAppInstalled() {
       fetch("/api/pwa-install", {
         method: "POST",
