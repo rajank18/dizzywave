@@ -8,6 +8,7 @@ import { AudioEngine } from "@/utils/audioEngine";
 import { Header } from "@/components/Header";
 import { CanvasStage } from "@/components/CanvasStage";
 import { ControlBar } from "@/components/ControlBar";
+import { InstallPwaModal } from "@/components/InstallPwaModal";
 
 /* ------------------------------------------------------------------ */
 /*  dizzywave — freehand polyphonic multi-timbral canvas synthesis.   */
@@ -665,6 +666,8 @@ export default function App() {
         setSpeed={setSpeed}
         voiceCount={voiceCount}
       />
+
+      <InstallPwaModal />
     </div>
   );
 }

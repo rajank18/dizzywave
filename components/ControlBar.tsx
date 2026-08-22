@@ -33,23 +33,27 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   speed,
   setSpeed,
 }) => {
-  const [isIndian, setIsIndian] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-      return tz.includes("Kolkata") || tz.includes("Calcutta") || tz.includes("India");
-    }
-    return false;
-  });
+  const [isIndian, setIsIndian] = useState<boolean>(false);
 
   useEffect(() => {
+    let active = true;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (tz.includes("Kolkata") || tz.includes("Calcutta") || tz.includes("India")) {
+      setTimeout(() => {
+        if (active) setIsIndian(true);
+      }, 0);
+    }
     fetch("https://ipapi.co/json/")
       .then((res) => res.json())
       .then((data) => {
-        if (data && data.country_code === "IN") {
+        if (active && data && data.country_code === "IN") {
           setIsIndian(true);
         }
       })
-      .catch(() => { });
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
