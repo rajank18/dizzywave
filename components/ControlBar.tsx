@@ -200,7 +200,7 @@ export const ControlBar: React.FC<ControlBarProps> = ({
         <div className="text-[11px] md:text-[12px] text-[var(--subtext)] tracking-[0.05em] flex-none">
           Built by{" "}
           <a
-            href="https://github.com/rajank18"
+            href="https://rajank18.vercel.app"
             target="_blank"
             rel="noreferrer"
             className="text-[#f6ab3e] font-bold underline"
